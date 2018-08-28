@@ -18,7 +18,6 @@ package org.geotools.renderer.lite.gridcoverage2d;
 
 import it.geosolutions.jaiext.range.Range;
 import java.awt.image.DataBuffer;
-import java.awt.image.IndexColorModel;
 import java.awt.image.RenderedImage;
 import java.awt.image.SampleModel;
 import java.util.HashMap;
@@ -119,12 +118,12 @@ public class RasterSymbolizerHelper extends SubchainStyleVisitorCoverageProcessi
         // TODO should we go to component color model also?
         // TODO use JAI TOOLS statistics and ignore no data properly.
         switch (dataType) {
-                // in case the original image has a USHORT pixel type without being associated
-                // with an index color model I would still go to 8 bits
+                // Do not rescale to byte if the original image has a USHORT pixel type.
+                // Also, raster images, that are not associated with index color model,
+                // need to be handled similarly here. Then, raster data does not loose
+                // valuable information during render operation.
             case DataBuffer.TYPE_USHORT:
-                if (outputImage.getColorModel() instanceof IndexColorModel) {
-                    break;
-                }
+                break;
             case DataBuffer.TYPE_DOUBLE:
             case DataBuffer.TYPE_FLOAT:
             case DataBuffer.TYPE_INT:
