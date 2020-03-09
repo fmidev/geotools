@@ -17,8 +17,11 @@
 package org.geotools.renderer.lite.gridcoverage2d;
 
 import it.geosolutions.imageio.utilities.ImageIOUtilities;
+import it.geosolutions.jaiext.JAIExt;
 import it.geosolutions.jaiext.range.RangeFactory;
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Rectangle;
+import java.awt.Transparency;
 import java.awt.color.ColorSpace;
 import java.awt.image.BufferedImage;
 import java.awt.image.ColorModel;
@@ -28,7 +31,6 @@ import java.awt.image.IndexColorModel;
 import java.awt.image.RenderedImage;
 import java.awt.image.WritableRaster;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -52,7 +54,6 @@ import org.geotools.factory.CommonFactoryFinder;
 import org.geotools.geometry.GeneralEnvelope;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.image.ImageWorker;
-import org.geotools.image.test.ImageAssert;
 import org.geotools.image.util.ComponentColorModelJAI;
 import org.geotools.referencing.crs.DefaultGeographicCRS;
 import org.geotools.referencing.operation.builder.GridToEnvelopeMapper;
@@ -78,13 +79,18 @@ import org.geotools.test.TestData;
 import org.geotools.util.factory.FactoryRegistryException;
 import org.geotools.util.factory.GeoTools;
 import org.geotools.xml.styling.SLDParser;
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.opengis.filter.expression.Expression;
 import org.opengis.referencing.datum.PixelInCell;
 import org.opengis.style.ContrastMethod;
 
-/** @author Simone Giannecchini, GeoSolutions. */
+/**
+ * @author Simone Giannecchini, GeoSolutions.
+ * @source $URL$
+ */
 public class RasterSymbolizerTest extends org.junit.Assert {
 
     private static final StyleFactory sf =
@@ -92,6 +98,15 @@ public class RasterSymbolizerTest extends org.junit.Assert {
 
     private static final double DELTA = 1E-7d;
 
+    @Before
+    public void setup() {
+        JAIExt.initJAIEXT(true, true);
+    }
+
+    @After
+    public void cleanup() {
+        JAIExt.initJAIEXT(false, true);
+    }
     /**
      * Creates a simple 500x500 {@link RenderedImage} for testing purposes.
      *
@@ -474,6 +489,8 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_4);
         output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Output image has been rescaled from ushort to byte
+        // because NORMALIZE_STRETCH_TO_MINMAX_NAME values are limited to byte range.
         assertEquals(
                 DataBuffer.TYPE_BYTE,
                 output.getRenderedImage().getSampleModel().getDataType()); // ok we went to byte
@@ -543,6 +560,74 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
+        assertEquals(0d, min[0], DELTA);
+        assertEquals(255d, max[0], DELTA);
+        testRasterSymbolizerHelper(rsh_StyleBuilder);
+
+        // ////////////////////////////////////////////////////////////////////
+        //
+        // Test #8b: [StyleBuilder]
+        //    - Opacity: 1.0
+        //    - ChannelSelection: Gray {Contrast Enh: Normalize-StretchMinMax} with USHORT outside
+        // byte range
+        //
+        // ////////////////////////////////////////////////////////////////////
+        gc =
+                CoverageFactoryFinder.getGridCoverageFactory(null)
+                        .create(
+                                "name",
+                                JAI.create(
+                                        "ImageRead",
+                                        new File(TestData.url(this, "test_ushort.tif").toURI())),
+                                new GeneralEnvelope(
+                                        new double[] {-90, -180}, new double[] {90, 180}),
+                                new GridSampleDimension[] {
+                                    new GridSampleDimension("test1BandByte_SLD")
+                                },
+                                null,
+                                null);
+
+        // build the RasterSymbolizer
+        sldBuilder = new StyleBuilder();
+        // the RasterSymbolizer Helper
+        rsh_StyleBuilder = new RasterSymbolizerHelper(gc, null);
+
+        final RasterSymbolizer rsb_4u = sldBuilder.createRasterSymbolizer();
+        final ChannelSelection chSel_4u = new ChannelSelectionImpl();
+        final SelectedChannelType chTypeGray_4u = new SelectedChannelTypeImpl();
+        final ContrastEnhancement cntEnh_4u = new ContrastEnhancementImpl();
+        final ContrastMethodStrategy method_4u = new NormalizeContrastMethodStrategy();
+        method_4u.addOption(
+                "algorithm",
+                sldBuilder.literalExpression(
+                        ContrastEnhancementType.NORMALIZE_STRETCH_TO_MINMAX_NAME));
+        method_4u.addOption(
+                "minValue",
+                sldBuilder.literalExpression(10)); // above ushort tif-file content minimum value
+        method_4u.addOption(
+                "maxValue",
+                sldBuilder.literalExpression(
+                        500)); // below ushort tif-file content maximum value, outside byte range
+        cntEnh_4u.setMethod(method_4u);
+
+        chTypeGray_4u.setChannelName("1");
+        chTypeGray_4u.setContrastEnhancement(cntEnh_4u);
+        chSel_4u.setGrayChannel(chTypeGray_4u);
+        rsb_4u.setChannelSelection(chSel_4u);
+
+        // visit the RasterSymbolizer
+        rsh_StyleBuilder.visit(rsb_4u);
+        output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Output image has been rescaled from ushort to byte
+        // because NORMALIZE_STRETCH_TO_MINMAX_NAME values are limited to byte range.
+        assertEquals(
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
+        worker = new ImageWorker(output.getRenderedImage());
+        min = worker.getMinimums();
+        max = worker.getMaximums();
+
+        // Stretch to Minimum Maximum does a Clamp by normalizing
+        // values into the range bounds that are byte min and max here.
         assertEquals(0d, min[0], DELTA);
         assertEquals(255d, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -644,6 +729,10 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_5);
         output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Check that output image is in bytes
+        // because hs.tif file provides content as bytes and not as ushort.
+        assertEquals(
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
         worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
         min = worker.getMinimums();
@@ -821,8 +910,13 @@ public class RasterSymbolizerTest extends org.junit.Assert {
                 "algorithm",
                 sldBuilder.literalExpression(
                         ContrastEnhancementType.NORMALIZE_CLIP_TO_MINMAX_NAME));
-        method_5c.addOption("minValue", sldBuilder.literalExpression(50));
-        method_5c.addOption("maxValue", sldBuilder.literalExpression(500)); // ouside byte range
+        method_5c.addOption(
+                "minValue",
+                sldBuilder.literalExpression(100)); // above ushort tif-file content minimum value
+        method_5c.addOption(
+                "maxValue",
+                sldBuilder.literalExpression(
+                        500)); // below ushort tif-file content maximum value, outside byte range
         cntEnh_5c.setMethod(method_5c);
 
         chTypeGray_5c.setChannelName("1");
@@ -833,9 +927,10 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_5c);
         output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Check that output image has not been rescaled to bytes
+        // when ushort source tif and raster style have been used.
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // not preserved
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
         worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
         min = worker.getMinimums();
@@ -844,8 +939,80 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
-        assertEquals(1, min[0], DELTA);
-        assertEquals(255, max[0], DELTA); // preserved
+        assertEquals(100, min[0], DELTA);
+        assertEquals(500, max[0], DELTA);
+        testRasterSymbolizerHelper(rsh_StyleBuilder);
+
+        // ////////////////////////////////////////////////////////////////////
+        //
+        // Test #10d: [StyleBuilder]
+        //    - Opacity: 1.0
+        //    - ChannelSelection: Gray {Contrast Enh: Normalize-ClipMinMax} USHORT outside ushort
+        // range
+        //
+        // ////////////////////////////////////////////////////////////////////
+        source =
+                new ImageWorker(new File(TestData.url(this, "small_4bands_UInt16.tif").toURI()))
+                        .retainBands(new int[] {2})
+                        .getRenderedImage();
+        gc =
+                CoverageFactoryFinder.getGridCoverageFactory(null)
+                        .create(
+                                "name",
+                                source,
+                                new GeneralEnvelope(
+                                        new double[] {-90, -180}, new double[] {90, 180}),
+                                new GridSampleDimension[] {new GridSampleDimension("band")},
+                                null,
+                                null);
+
+        // build the RasterSymbolizer
+        sldBuilder = new StyleBuilder();
+        // the RasterSymbolizer Helper
+        rsh_StyleBuilder = new RasterSymbolizerHelper(gc, null);
+
+        final RasterSymbolizer rsb_5d = sldBuilder.createRasterSymbolizer();
+        final ChannelSelection chSel_5d = new ChannelSelectionImpl();
+        final SelectedChannelType chTypeGray_5d = new SelectedChannelTypeImpl();
+        final ContrastEnhancement cntEnh_5d = new ContrastEnhancementImpl();
+
+        final ContrastMethodStrategy method_5d = new NormalizeContrastMethodStrategy();
+
+        method_5d.addOption(
+                "algorithm",
+                sldBuilder.literalExpression(
+                        ContrastEnhancementType.NORMALIZE_CLIP_TO_MINMAX_NAME));
+        // Value below ushort tif-file content minimum value
+        method_5d.addOption("minValue", sldBuilder.literalExpression(50));
+        // Value above ushort tif-file content maximum value, outside ushort range
+        method_5d.addOption("maxValue", sldBuilder.literalExpression(80000));
+        cntEnh_5d.setMethod(method_5d);
+
+        chTypeGray_5d.setChannelName("1");
+        chTypeGray_5d.setContrastEnhancement(cntEnh_5d);
+        chSel_5d.setGrayChannel(chTypeGray_5d);
+        rsb_5d.setChannelSelection(chSel_5d);
+
+        // visit the RasterSymbolizer
+        rsh_StyleBuilder.visit(rsb_5d);
+        output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Check that output image has not been rescaled to bytes
+        // when ushort source tif and raster style have been used.
+        assertEquals(
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
+        worker = new ImageWorker(output.getRenderedImage());
+        worker.setNoData(RangeFactory.create(0, 0));
+        min = worker.getMinimums();
+        max = worker.getMaximums();
+
+        // Clip to Minimum Maximum does a Clamp by forcing
+        // values outside the specified range to be clamped
+        // to the range bounds.
+        // Ushort tif-file content defines min limit and
+        // ushort tif-file content defines max limit because
+        // those values are within ushort and range bounds.
+        assertEquals(97, min[0], DELTA);
+        assertEquals(524, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
 
         // ////////////////////////////////////////////////////////////////////
@@ -942,8 +1109,13 @@ public class RasterSymbolizerTest extends org.junit.Assert {
 
         method_7.setAlgorithm(
                 sldBuilder.literalExpression(ContrastEnhancementType.NORMALIZE_CLIP_TO_ZERO_NAME));
-        method_7.addParameter("minValue", sldBuilder.literalExpression(50));
-        method_7.addParameter("maxValue", sldBuilder.literalExpression(18000));
+        method_7.addParameter(
+                "minValue",
+                sldBuilder.literalExpression(50)); // above ushort tif-file content minimum value
+        method_7.addParameter(
+                "maxValue",
+                sldBuilder.literalExpression(
+                        18000)); // below ushort tif-file content maximum value, outside byte range
         cntEnh_7.setMethod(method_7);
 
         chTypeGray_7.setChannelName("1");
@@ -955,17 +1127,21 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_7);
         output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Check that output image has not been rescaled to bytes
+        // when ushort source tif and raster style have been used.
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // not preserved
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
         worker = new ImageWorker(output.getRenderedImage());
         min = worker.getMinimums();
         max = worker.getMaximums();
-        // Clip to Minimum Maximum does a Clamp by forcing
+        // Clip to zero does a Clamp by forcing
         // values outside the specified range to be clamped
-        // to the range bounds
+        // to zero
         assertEquals(0, min[0], DELTA);
-        assertEquals(255, max[0], DELTA); // final rescale to bytes
+        // 16-bit test tif file contains values greater than clip maximum.
+        // But, those values have been clipped to zero in this test case.
+        // So, maximum value below clip maximum is checked here.
+        assertEquals(16114, max[0], DELTA);
 
         testRasterSymbolizerHelper(rsh_StyleBuilder);
 
@@ -1529,7 +1705,27 @@ public class RasterSymbolizerTest extends org.junit.Assert {
             throws IOException, TransformerException, FactoryRegistryException,
                     IllegalArgumentException, URISyntaxException {
         // the GridCoverage
-        GridCoverage2D gc = read3BandsByteCoverage();
+        GeneralEnvelope envelope =
+                new GeneralEnvelope(new double[] {-180, -90}, new double[] {180, 90});
+        envelope.setCoordinateReferenceSystem(DefaultGeographicCRS.WGS84);
+        final GridSampleDimension[] gsd = {
+            new GridSampleDimension("test1BandByte_SLD1"),
+            new GridSampleDimension("test1BandByte_SLD2"),
+            new GridSampleDimension("test1BandByte_SLD3")
+        };
+        GridCoverage2D gc =
+                CoverageFactoryFinder.getGridCoverageFactory(null)
+                        .create(
+                                "name",
+                                JAI.create(
+                                        "ImageRead",
+                                        new File(
+                                                TestData.url(this, "small_3bands_Byte.tif")
+                                                        .toURI())),
+                                envelope,
+                                gsd,
+                                null,
+                                null);
 
         // ////////////////////////////////////////////////////////////////////
         //
@@ -1604,32 +1800,9 @@ public class RasterSymbolizerTest extends org.junit.Assert {
     }
 
     @org.junit.Test
-    public void greenSelection()
+    public void bandsByte_ColorMap_SLD()
             throws IOException, TransformerException, FactoryRegistryException,
                     IllegalArgumentException, URISyntaxException {
-        GridCoverage2D gc = read3BandsByteCoverage();
-
-        java.net.URL surl = TestData.url(this, "greenChannelSelection.sld");
-        SLDParser stylereader = new SLDParser(sf, surl);
-        StyledLayerDescriptor sld = stylereader.parseSLD();
-        // the RasterSymbolizer Helper
-        SubchainStyleVisitorCoverageProcessingAdapter rsh = new RasterSymbolizerHelper(gc, null);
-
-        // build the RasterSymbolizer
-        final RasterSymbolizer rs_1 = extractRasterSymbolizer(sld);
-
-        // visit the RasterSymbolizer
-        rsh.visit(rs_1);
-
-        final RenderedImage image = rsh.getOutput().getRenderedImage();
-        File reference =
-                new File(
-                        "src/test/resources/org/geotools/renderer/lite/gridcoverage2d/greenChannleSelection.png");
-        ImageAssert.assertEquals(reference, image, 0);
-    }
-
-    public GridCoverage2D read3BandsByteCoverage()
-            throws URISyntaxException, FileNotFoundException {
         // the GridCoverage
         GeneralEnvelope envelope =
                 new GeneralEnvelope(new double[] {-180, -90}, new double[] {180, 90});
@@ -1639,24 +1812,19 @@ public class RasterSymbolizerTest extends org.junit.Assert {
             new GridSampleDimension("test1BandByte_SLD2"),
             new GridSampleDimension("test1BandByte_SLD3")
         };
-        return CoverageFactoryFinder.getGridCoverageFactory(null)
-                .create(
-                        "name",
-                        JAI.create(
-                                "ImageRead",
-                                new File(TestData.url(this, "small_3bands_Byte.tif").toURI())),
-                        envelope,
-                        gsd,
-                        null,
-                        null);
-    }
-
-    @org.junit.Test
-    public void bandsByte_ColorMap_SLD()
-            throws IOException, TransformerException, FactoryRegistryException,
-                    IllegalArgumentException, URISyntaxException {
-        // the GridCoverage
-        GridCoverage2D gc = read3BandsByteCoverage();
+        GridCoverage2D gc =
+                CoverageFactoryFinder.getGridCoverageFactory(null)
+                        .create(
+                                "name",
+                                JAI.create(
+                                        "ImageRead",
+                                        new File(
+                                                TestData.url(this, "small_3bands_Byte.tif")
+                                                        .toURI())),
+                                envelope,
+                                gsd,
+                                null,
+                                null);
 
         // ////////////////////////////////////////////////////////////////////
         //
@@ -2418,10 +2586,11 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         SubchainStyleVisitorCoverageProcessingAdapter rsh = new RasterSymbolizerHelper(gc, null);
         final RasterSymbolizer rs = extractRasterSymbolizer(sld);
         rsh.visit(rs);
-        // Check if the final image has been rescaled to bytes
         RenderedImage outputImage = ((GridCoverage2D) rsh.getOutput()).getRenderedImage();
         int dataType = outputImage.getSampleModel().getDataType();
-        assertEquals(DataBuffer.TYPE_BYTE, dataType);
+        // Check that output image has not been rescaled to bytes
+        // when ushort source tif and raster style have been used.
+        assertEquals(DataBuffer.TYPE_USHORT, dataType);
     }
 
     @Test
@@ -2474,9 +2643,7 @@ public class RasterSymbolizerTest extends org.junit.Assert {
             assertTrue(
                     Integer.toString((i) + 1)
                             .equalsIgnoreCase(
-                                    postBandSelectionChannel
-                                            .getChannelName()
-                                            .evaluate(null, String.class)));
+                                    postBandSelectionChannel.getChannelName().toString()));
             assertTrue(method.name().equalsIgnoreCase(ContrastMethod.NORMALIZE.name()));
 
             Map<String, Expression> options = cntEnh.getOptions();
