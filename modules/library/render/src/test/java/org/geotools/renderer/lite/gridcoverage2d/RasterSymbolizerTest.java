@@ -431,6 +431,8 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         rsh_SLD.visit(rs_4);
 
         GridCoverage2D output = (GridCoverage2D) rsh_SLD.getOutput();
+        assertEquals(
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         double[] min = worker.getMinimums();
         double[] max = worker.getMaximums();
@@ -491,16 +493,18 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_4);
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Notice, tif is ushort but stretch operation normalizes content to byte
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // ok we went to byte
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         double[] min = worker.getMinimums();
         double[] max = worker.getMaximums();
 
-        // Clip to Minimum Maximum does a Clamp by forcing
-        // values outside the specified range to be clamped
-        // to the range bounds
+        // Stretch to Minimum Maximum does a clip of the values outside the specified input range
+        // it will linearly stretch the source raster by linearly mapping values within the
+        // [MIN_VALUE, MAX_VALUE] range to [0,255].
+        // This will also automatically result into a clip of the values outside the specified input
+        // range.
         assertEquals(0d, min[0], DELTA);
         assertEquals(255d, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -562,15 +566,18 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_4f);
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        // Notice, tif is float but stretch operation normalizes content to byte
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // ok we went to byte
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         double[] min = worker.getMinimums();
         double[] max = worker.getMaximums();
-        // Clip to Minimum Maximum does a Clamp by forcing
-        // values outside the specified range to be clamped
-        // to the range bounds
+
+        // Stretch to Minimum Maximum does a clip of the values outside the specified input range
+        // it will linearly stretch the source raster by linearly mapping values within the
+        // [MIN_VALUE, MAX_VALUE] range to [0,255].
+        // This will also automatically result into a clip of the values outside the specified input
+        // range.
         assertEquals(0d, min[0], DELTA);
         assertEquals(255d, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -612,6 +619,8 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         rsh_SLD.visit(rs_5);
 
         GridCoverage2D output = (GridCoverage2D) rsh_SLD.getOutput();
+        assertEquals(
+                DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
         double[] min = worker.getMinimums();
@@ -620,6 +629,9 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
+        // Values smaller than MIN_VALUE will be forced to MIN_VALUE.
+        // Values greater than MAX_VALUE will be forced to MAX_VALUE.
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged.
         assertEquals(10d, min[0], DELTA);
         assertEquals(100d, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_SLD);
@@ -631,7 +643,7 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         //
         // Test #10: [StyleBuilder]
         // - Opacity: 1.0
-        // - ChannelSelection: Gray {Contrast Enh: Normalize-ClipMinMax} USHORT
+        // - ChannelSelection: Gray {Contrast Enh: Normalize-ClipMinMax} USHORT in Byte range
         //
         // ////////////////////////////////////////////////////////////////////
         GridCoverage2D gc =
@@ -640,7 +652,7 @@ public class RasterSymbolizerTest extends org.junit.Assert {
                                 "name",
                                 JAI.create(
                                         "ImageRead",
-                                        new File(TestData.url(this, "hs.tif").toURI())),
+                                        new File(TestData.url(this, "test_ushort.tif").toURI())),
                                 new GeneralBounds(new double[] {-90, -180}, new double[] {90, 180}),
                                 new GridSampleDimension[] {
                                     new GridSampleDimension("test1BandByte_SLD")
@@ -676,6 +688,8 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // visit the RasterSymbolizer
         rsh_StyleBuilder.visit(rsb_5);
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
+        assertEquals(
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
         double[] min = worker.getMinimums();
@@ -684,6 +698,9 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
+        // Values smaller than MIN_VALUE will be forced to MIN_VALUE.
+        // Values greater than MAX_VALUE will be forced to MAX_VALUE.
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged.
         assertEquals(50, min[0], DELTA);
         assertEquals(200, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -739,9 +756,6 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
                 DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
-        // at the end the rastersymb does a rescale to byte for simplicity that tries to bring
-        // back
-        // the dynamic to 8 Bits
 
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
@@ -750,6 +764,9 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
+        // Values smaller than MIN_VALUE will be forced to MIN_VALUE.
+        // Values greater than MAX_VALUE will be forced to MAX_VALUE.
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged.
         assertEquals(50, min[0], DELTA);
         assertEquals(200, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -807,9 +824,6 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
                 DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
-        // at the end the rastersymb does a rescale to byte for simplicity that tries to bring
-        // back
-        // the dynamic to 8 Bits
 
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
@@ -818,10 +832,11 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
-        assertEquals(10, min[0], DELTA); // the RasterSymbolizerHelper introduce a stretch to
-        // BYTE
-        assertEquals(255, max[0], DELTA); // the RasterSymbolizerHelper introduce a stretch to
-        // BYTE
+        // Values smaller than MIN_VALUE will be forced to MIN_VALUE.
+        // Values greater than MAX_VALUE will be forced to MAX_VALUE.
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged.
+        assertEquals(10, min[0], DELTA);
+        assertEquals(255, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
     }
 
@@ -879,8 +894,7 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         rsh_StyleBuilder.visit(rsb_5c);
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // not preserved
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
         ImageWorker worker = new ImageWorker(output.getRenderedImage());
         worker.setNoData(RangeFactory.create(0, 0));
         double[] min = worker.getMinimums();
@@ -889,8 +903,11 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         // Clip to Minimum Maximum does a Clamp by forcing
         // values outside the specified range to be clamped
         // to the range bounds
-        assertEquals(1, min[0], DELTA);
-        assertEquals(255, max[0], DELTA); // preserved
+        // Values smaller than MIN_VALUE will be forced to MIN_VALUE.
+        // Values greater than MAX_VALUE will be forced to MAX_VALUE.
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged.
+        assertEquals(97, min[0], DELTA);
+        assertEquals(500, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
     }
 
@@ -947,6 +964,9 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         double[] min = worker.getMinimums();
         double[] max = worker.getMaximums();
 
+        // ClipToZero is similar to ClipToMinimumMaximum
+        // However, values outside the [MIN_VALUE, MAX_VALUE] range will be forced to be 0
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged
         assertEquals(0, min[0], DELTA);
         assertEquals(100, max[0], DELTA);
         testRasterSymbolizerHelper(rsh_StyleBuilder);
@@ -1006,16 +1026,15 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         rsh_StyleBuilder.visit(rsb_7);
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
-                DataBuffer.TYPE_BYTE,
-                output.getRenderedImage().getSampleModel().getDataType()); // not preserved
+                DataBuffer.TYPE_USHORT, output.getRenderedImage().getSampleModel().getDataType());
         worker = new ImageWorker(output.getRenderedImage());
         min = worker.getMinimums();
         max = worker.getMaximums();
-        // Clip to Minimum Maximum does a Clamp by forcing
-        // values outside the specified range to be clamped
-        // to the range bounds
+        // ClipToZero is similar to ClipToMinimumMaximum
+        // However, values outside the [MIN_VALUE, MAX_VALUE] range will be forced to be 0
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged
         assertEquals(0, min[0], DELTA);
-        assertEquals(255, max[0], DELTA); // final rescale to bytes
+        assertEquals(16114, max[0], DELTA);
 
         testRasterSymbolizerHelper(rsh_StyleBuilder);
     }
@@ -1073,16 +1092,14 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
                 DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
-        // at the end the rastersymb does a rescale to byte for simplicity that tries to bring
-        // back
-        // the dynamic to 8 Bits
 
         worker = new ImageWorker(output.getRenderedImage());
         min = worker.getMinimums();
         max = worker.getMaximums();
-        // Clip to Minimum Maximum does a Clamp by forcing
-        // values outside the specified range to be clamped
-        // to the range bounds
+
+        // ClipToZero is similar to ClipToMinimumMaximum
+        // However, values outside the [MIN_VALUE, MAX_VALUE] range will be forced to be 0
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged
         assertEquals(0, min[0], DELTA);
         assertEquals(200, max[0], DELTA);
 
@@ -1142,17 +1159,16 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         GridCoverage2D output = (GridCoverage2D) rsh_StyleBuilder.getOutput();
         assertEquals(
                 DataBuffer.TYPE_BYTE, output.getRenderedImage().getSampleModel().getDataType());
-        // at the end the rastersymb does a rescale to byte for simplicity that tries to bring
-        // back
-        // the dynamic to 8 Bits
+
         worker = new ImageWorker(output.getRenderedImage());
         min = worker.getMinimums();
         max = worker.getMaximums();
 
-        assertEquals(0, min[0], DELTA); // the RasterSymbolizerHelper introduce a stretch to
-        // BYTE
-        assertEquals(255, max[0], DELTA); // the RasterSymbolizerHelper introduce a stretch to
-        // BYTE
+        // ClipToZero is similar to ClipToMinimumMaximum
+        // However, values outside the [MIN_VALUE, MAX_VALUE] range will be forced to be 0
+        // Values in the [MIN_VALUE, MAX_VALUE] range will passthrough unchanged
+        assertEquals(0, min[0], DELTA);
+        assertEquals(255, max[0], DELTA);
 
         testRasterSymbolizerHelper(rsh_StyleBuilder);
     }
@@ -2461,10 +2477,48 @@ public class RasterSymbolizerTest extends org.junit.Assert {
         SubchainStyleVisitorCoverageProcessingAdapter rsh = new RasterSymbolizerHelper(gc, null);
         final RasterSymbolizer rs = extractRasterSymbolizer(sld);
         rsh.visit(rs);
-        // Check if the final image has been rescaled to bytes
+        RenderedImage outputImage = rsh.getOutput().getRenderedImage();
+        int dataType = outputImage.getSampleModel().getDataType();
+        assertEquals(DataBuffer.TYPE_USHORT, dataType);
+
+        ImageWorker worker = new ImageWorker(outputImage);
+        double[] min = worker.getMinimums();
+        double[] max = worker.getMaximums();
+        assertEquals(0, min[0], DELTA);
+        assertEquals(28868, max[0], DELTA);
+    }
+
+    @Test
+    public void testFloat() throws IOException {
+        GeneralBounds envelope =
+                new GeneralBounds(new double[] {-180, -90}, new double[] {180, 90});
+        envelope.setCoordinateReferenceSystem(DefaultGeographicCRS.WGS84);
+        java.net.URL surl = TestData.url(this, "raster.sld");
+        SLDParser stylereader = new SLDParser(sf, surl);
+        StyledLayerDescriptor sld = stylereader.parseSLD();
+        GridCoverage2D gc =
+                CoverageFactoryFinder.getGridCoverageFactory(null)
+                        .create(
+                                "name",
+                                JAI.create("ImageRead", TestData.file(this, "smalldem.tif")),
+                                envelope,
+                                new GridSampleDimension[] {
+                                    new GridSampleDimension("test_dimension")
+                                },
+                                null,
+                                null);
+        SubchainStyleVisitorCoverageProcessingAdapter rsh = new RasterSymbolizerHelper(gc, null);
+        final RasterSymbolizer rs = extractRasterSymbolizer(sld);
+        rsh.visit(rs);
         RenderedImage outputImage = rsh.getOutput().getRenderedImage();
         int dataType = outputImage.getSampleModel().getDataType();
         assertEquals(DataBuffer.TYPE_BYTE, dataType);
+
+        ImageWorker worker = new ImageWorker(outputImage);
+        double[] min = worker.getMinimums();
+        double[] max = worker.getMaximums();
+        assertEquals(0, min[0], DELTA);
+        assertEquals(255, max[0], DELTA);
     }
 
     @Test
