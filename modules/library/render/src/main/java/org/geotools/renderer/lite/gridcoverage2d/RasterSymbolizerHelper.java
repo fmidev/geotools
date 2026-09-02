@@ -17,7 +17,6 @@
 package org.geotools.renderer.lite.gridcoverage2d;
 
 import java.awt.image.DataBuffer;
-import java.awt.image.IndexColorModel;
 import java.awt.image.RenderedImage;
 import java.awt.image.SampleModel;
 import java.util.HashMap;
@@ -112,12 +111,12 @@ public class RasterSymbolizerHelper extends SubchainStyleVisitorCoverageProcessi
         // TODO should we go to component color model also?
         // TODO use ImageN TOOLS statistics and ignore no data properly.
         switch (dataType) {
-                // in case the original image has a USHORT pixel type without being associated
-                // with an index color model I would still go to 8 bits
             case DataBuffer.TYPE_USHORT:
-                if (outputImage.getColorModel() instanceof IndexColorModel) {
-                    break;
-                }
+                // Preserve USHORT precision unconditionally (regardless of color model),
+                // so raster data does not lose valuable information during rendering.
+                // Unlike the types below, USHORT has a fixed native range that output
+                // formats (e.g. GeoTIFF, PNG16) can encode directly without rescaling.
+                break;
             case DataBuffer.TYPE_DOUBLE:
             case DataBuffer.TYPE_FLOAT:
             case DataBuffer.TYPE_INT:
